@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Money Miner Admin</title>
+</head>
+
+<body>
+
+<h2>Admin Panel</h2>
+
+<h3>Create Campaign</h3>
+
+<input id="title" placeholder="Title"><br><br>
+<input id="payout" placeholder="Payout"><br><br>
+<input id="icon" placeholder="Icon URL"><br><br>
+<input id="desc" placeholder="Description"><br><br>
+
+<!-- ✅ NEW FIELD -->
+<textarea id="trackier" placeholder="Trackier Click URL"></textarea><br><br>
+
+<button onclick="createCampaign()">
+    Create Campaign
+</button>
+
+
+<h3>Campaigns</h3>
+
+<button onclick="loadCampaigns()">
+    Load Campaigns
+</button>
+
+<ul id="campaigns"></ul>
+
+
+<h3>Withdraw Requests</h3>
+
+<button onclick="loadWithdraws()">
+    Load Withdraws
+</button>
+
+<ul id="withdraws"></ul>
+
+
+<script src="script.js"></script>
+
+</body>
+
+</html>
