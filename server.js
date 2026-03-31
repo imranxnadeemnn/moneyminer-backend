@@ -61,24 +61,19 @@ app.post("/verify-otp", async (req, res) => {
 // ================= CAMPAIGNS =================
 
 app.get("/campaigns", async (req, res) => {
+  try {
+    console.log("📥 /campaigns called")
 
-    const r =
-        await db.query(
+    const result = await pool.query("SELECT * FROM campaigns")
 
-            `select
-                id,
-                title,
-                payout,
-                icon_url,
-                description,
-                trackier_url
-             from campaigns
-             where status='active'`
+    console.log("✅ DB result:", result.rows)
 
-        )
+    res.json(result.rows)
 
-    res.json(r.rows)
-
+  } catch (err) {
+    console.error("❌ ERROR in /campaigns:", err.message)
+    res.status(500).json({ error: err.message })
+  }
 })
 
 
