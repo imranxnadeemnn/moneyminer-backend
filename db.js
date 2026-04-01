@@ -41,9 +41,39 @@ const pool = new Pool({
   }
 })
 
+function formatDbError(err) {
+  if (
+    err &&
+    typeof err.message === "string" &&
+    err.message.includes("Tenant or user not found")
+  ) {
+    const safeUrl = new URL(connectionString)
+    const host = safeUrl.hostname
+    const port = safeUrl.port || "5432"
+    const user = decodeURIComponent(safeUrl.username || "")
+
+    return new Error(
+      "Supabase connection failed: tenant/user not found. " +
+      `Check Render DB_URL or DATABASE_URL. Current host=${host} port=${port} user=${user}. ` +
+      "For Supabase pooler connections, copy the exact connection string from Supabase Dashboard > Connect. " +
+      "The username usually includes your project ref, for example postgres.<project-ref>."
+    )
+  }
+
+  return err
+}
+
 pool.on("error", (err) => {
-  console.error("Postgres pool error:", err.message)
+  console.error("Postgres pool error:", formatDbError(err).message)
 })
 
-module.exports = pool
-
+module.exports = {
+  ...pool,
+  query: async (...args) => {
+    try {
+      return await pool.query(...args)
+    } catch (err) {
+      throw formatDbError(err)
+    }
+  }
+}
