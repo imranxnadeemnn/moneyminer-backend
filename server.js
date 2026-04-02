@@ -1,5 +1,7 @@
 const express = require("express")
 const cors = require("cors")
+const fs = require("fs")
+const path = require("path")
 const db = require("./db")
 
 const app = express()
@@ -8,6 +10,19 @@ app.use(cors())
 app.use(express.json())
 
 let adminToken = null
+
+async function initializeDatabase() {
+    const schemaPath = path.join(__dirname, "schema.sql")
+
+    if (!fs.existsSync(schemaPath)) {
+        console.warn("schema.sql not found, skipping database initialization")
+        return
+    }
+
+    const schemaSql = fs.readFileSync(schemaPath, "utf8")
+    await db.query(schemaSql)
+    console.log("Database schema initialized")
+}
 
 
 // ================= ROOT =================
@@ -246,6 +261,17 @@ app.post("/kyc", async (req, res) => {
 // ================= PORT =================
 const PORT = process.env.PORT || 3000
 
-app.listen(PORT, "0.0.0.0", () => {
-    console.log("Bifrost running on " + PORT)
-})
+async function startServer() {
+    try {
+        await initializeDatabase()
+
+        app.listen(PORT, "0.0.0.0", () => {
+            console.log("Bifrost running on " + PORT)
+        })
+    } catch (err) {
+        console.error("Failed to start server:", err.message)
+        process.exit(1)
+    }
+}
+
+startServer()
