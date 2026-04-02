@@ -1,7 +1,5 @@
 const express = require("express")
 const cors = require("cors")
-const fs = require("fs")
-const path = require("path")
 const db = require("./db")
 
 const app = express()
@@ -11,17 +9,62 @@ app.use(express.json())
 
 let adminToken = null
 
-async function initializeDatabase() {
-    const schemaPath = path.join(__dirname, "schema.sql")
+async function initDB() {
+    await db.query(`
+        create table if not exists users (
+            user_id serial primary key,
+            phone text unique
+        );
 
-    if (!fs.existsSync(schemaPath)) {
-        console.warn("schema.sql not found, skipping database initialization")
-        return
-    }
+        create table if not exists wallets (
+            id serial primary key,
+            user_id int,
+            balance numeric default 0
+        );
 
-    const schemaSql = fs.readFileSync(schemaPath, "utf8")
-    await db.query(schemaSql)
-    console.log("Database schema initialized")
+        create table if not exists campaigns (
+            id serial primary key,
+            title text,
+            payout numeric,
+            icon_url text,
+            description text,
+            trackier_url text,
+            status text default 'active'
+        );
+
+        create table if not exists rewards (
+            id serial primary key,
+            user_id int,
+            campaign_id int,
+            amount numeric,
+            created_at timestamp default current_timestamp
+        );
+
+        create table if not exists withdraws (
+            id serial primary key,
+            user_id int,
+            amount numeric,
+            status text,
+            created_at timestamp default current_timestamp
+        );
+
+        create table if not exists kyc (
+            id serial primary key,
+            user_id int,
+            name text,
+            pan text,
+            upi text
+        );
+
+        create table if not exists admins (
+            id serial primary key,
+            username text,
+            password text
+        );
+    `)
+
+    console.log("Tables created successfully")
+    console.log("DB initialized")
 }
 
 
@@ -263,7 +306,7 @@ const PORT = process.env.PORT || 3000
 
 async function startServer() {
     try {
-        await initializeDatabase()
+        await initDB()
 
         app.listen(process.env.PORT || 3000, "0.0.0.0", () => {
             console.log("Bifrost running on " + PORT)
