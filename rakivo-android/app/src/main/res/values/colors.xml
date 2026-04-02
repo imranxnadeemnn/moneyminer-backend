@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#4CAF50</color>
+    <color name="primary_dark">#388E3C</color>
+    <color name="accent">#8BC34A</color>
+
+    <color name="text_primary">#212121</color>
+    <color name="text_secondary">#757575</color>
+    <color name="white">#FFFFFF</color>
+    <color name="bg_grey">#F5F5F5</color>
+    <color name="payout_green">#2E7D32</color>
+
+    <!-- Keeping old names for compatibility if needed elsewhere temporarily -->
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#4CAF50</color>
+    <color name="purple_700">#388E3C</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+</resources>

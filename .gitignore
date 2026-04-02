@@ -1,3 +1,9 @@
 node_modules/
 .env
 .DS_Store
+rakivo-android/.gradle/
+rakivo-android/.idea/
+rakivo-android/.kotlin/
+rakivo-android/build/
+rakivo-android/app/build/
+rakivo-android/local.properties
