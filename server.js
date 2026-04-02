@@ -15,6 +15,10 @@ function sendError(res, status, message) {
   })
 }
 
+function hasValue(value) {
+  return value !== undefined && value !== null && value !== ""
+}
+
 app.disable("x-powered-by")
 app.use(cors())
 app.use(express.json())
@@ -88,10 +92,23 @@ async function initDB() {
     create index if not exists idx_rewards_user_id on rewards(user_id);
     create index if not exists idx_wallets_user_id on wallets(user_id);
     create index if not exists idx_campaigns_status on campaigns(status);
+    create unique index if not exists idx_campaigns_title_unique on campaigns(title);
+    create unique index if not exists idx_admins_username_unique on admins(username);
 
     insert into admins (username, password)
     values ('admin', 'admin123')
     on conflict (username) do nothing;
+
+    insert into campaigns (title, payout, icon_url, description, trackier_url, status)
+    values (
+      'Test Game',
+      20,
+      '',
+      'Seed campaign for Render deployment',
+      '',
+      'active'
+    )
+    on conflict (title) do nothing;
   `)
 
   console.log("Tables created successfully")
@@ -168,6 +185,10 @@ app.post("/admin/login", async (req, res) => {
   try {
     const { username, password } = req.body
 
+    if (!hasValue(username) || !hasValue(password)) {
+      return sendError(res, 400, "Username and password are required")
+    }
+
     const result = await db.query(
       "select * from admins where username=$1 and password=$2",
       [username, password]
@@ -209,6 +230,10 @@ app.post("/admin/campaign", checkAdmin, async (req, res) => {
       trackier_url
     } = req.body
 
+    if (!hasValue(title) || !hasValue(payout)) {
+      return sendError(res, 400, "Title and payout are required")
+    }
+
     const result = await db.query(
       `insert into campaigns
       (title, payout, icon_url, description, trackier_url, status)
@@ -228,8 +253,8 @@ app.post("/trackier/postback", async (req, res) => {
   try {
     const { user_id, campaign_id, payout } = req.body
 
-    if (!user_id || !campaign_id) {
-      return sendError(res, 400, "user_id and campaign_id are required")
+    if (!hasValue(user_id) || !hasValue(campaign_id) || !hasValue(payout)) {
+      return sendError(res, 400, "user_id, campaign_id and payout are required")
     }
 
     const existing = await db.query(
@@ -331,6 +356,10 @@ app.post("/withdraw", async (req, res) => {
 app.post("/kyc", async (req, res) => {
   try {
     const { user_id, name, pan, upi } = req.body
+
+    if (!hasValue(user_id) || !hasValue(name) || !hasValue(pan) || !hasValue(upi)) {
+      return sendError(res, 400, "user_id, name, pan and upi are required")
+    }
 
     await db.query(
       "insert into kyc (user_id, name, pan, upi) values ($1, $2, $3, $4)",
