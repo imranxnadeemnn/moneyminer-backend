@@ -1,49 +1,457 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-    <title>Money Miner Admin</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bifrost Admin</title>
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --surface: #ffffff;
+      --ink: #172033;
+      --muted: #64748b;
+      --line: #dbe3f0;
+      --brand: #0f766e;
+      --brand-dark: #115e59;
+      --accent: #f59e0b;
+      --danger: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: linear-gradient(180deg, #eef6ff 0%, var(--bg) 30%);
+      color: var(--ink);
+    }
+    .shell {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .hero, .panel, .metric {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
+    }
+    .hero {
+      padding: 28px;
+      background: linear-gradient(135deg, #073b4c, #0f766e 65%, #14b8a6);
+      color: white;
+      border: none;
+    }
+    .hero h1 { margin: 0 0 8px; font-size: 32px; }
+    .hero p { margin: 0; max-width: 720px; color: rgba(255,255,255,0.88); }
+    .login-card {
+      max-width: 440px;
+      margin: 24px auto 0;
+      padding: 24px;
+    }
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+    .metrics {
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      margin-top: 20px;
+    }
+    .metric {
+      padding: 18px;
+    }
+    .metric .label {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    .metric .value {
+      font-size: 28px;
+      font-weight: 700;
+    }
+    .workspace {
+      display: none;
+      margin-top: 24px;
+    }
+    .two-col {
+      display: grid;
+      grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .panel {
+      padding: 20px;
+    }
+    h2, h3 {
+      margin: 0 0 14px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin: 14px 0 6px;
+      color: var(--muted);
+    }
+    input, textarea, select {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #fff;
+      font: inherit;
+    }
+    textarea {
+      min-height: 92px;
+      resize: vertical;
+    }
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 12px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--brand);
+      color: white;
+    }
+    button.secondary {
+      background: #e6f4f1;
+      color: var(--brand-dark);
+    }
+    button.ghost {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--ink);
+    }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .toolbar .actions, .form-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .status {
+      margin-top: 14px;
+      font-size: 13px;
+      color: var(--muted);
+      min-height: 18px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #ecfeff;
+      color: #155e75;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      text-align: left;
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .table-wrap { overflow-x: auto; }
+    .small { font-size: 12px; color: var(--muted); }
+    .danger { color: var(--danger); }
+    @media (max-width: 900px) {
+      .two-col { grid-template-columns: 1fr; }
+    }
+  </style>
 </head>
-
 <body>
+  <div class="shell">
+    <section class="hero">
+      <h1>Bifrost Admin Dashboard</h1>
+      <p>Manage Rakivo offers, monitor payout operations, and keep the acquisition catalog updated from one place.</p>
+    </section>
 
-<h2>Admin Panel</h2>
+    <section id="loginCard" class="panel login-card">
+      <h2>Admin Login</h2>
+      <label for="username">Username</label>
+      <input id="username" value="admin" />
+      <label for="password">Password</label>
+      <input id="password" type="password" placeholder="Enter admin password" />
+      <div class="form-actions" style="margin-top:16px;">
+        <button id="loginButton">Enter Dashboard</button>
+      </div>
+      <div id="loginStatus" class="status"></div>
+    </section>
 
-<h3>Create Campaign</h3>
+    <section id="workspace" class="workspace">
+      <div class="toolbar">
+        <div>
+          <h2>Operations Overview</h2>
+          <div class="small">Self-hosted at <code>/admin-ui</code></div>
+        </div>
+        <div class="actions">
+          <button class="secondary" id="syncPayoutsButton">Sync Pending Payouts</button>
+          <button class="secondary" id="refreshAllButton">Refresh Data</button>
+          <button class="ghost" id="logoutButton">Logout</button>
+        </div>
+      </div>
 
-<input id="title" placeholder="Title"><br><br>
-<input id="payout" placeholder="Payout"><br><br>
-<input id="icon" placeholder="Icon URL"><br><br>
-<input id="desc" placeholder="Description"><br><br>
+      <div id="metrics" class="grid metrics"></div>
 
-<!-- ✅ NEW FIELD -->
-<textarea id="trackier" placeholder="Trackier Click URL"></textarea><br><br>
+      <div class="two-col">
+        <section class="panel">
+          <div class="toolbar">
+            <div>
+              <h3 id="formTitle">Create Offer</h3>
+              <div class="small">Use this to control what Rakivo renders on the home screen.</div>
+            </div>
+            <button class="ghost" id="resetFormButton">Reset</button>
+          </div>
 
-<button onclick="createCampaign()">
-    Create Campaign
-</button>
+          <label for="title">Title</label>
+          <input id="title" placeholder="Offer title" />
 
+          <label for="payout">Payout</label>
+          <input id="payout" type="number" placeholder="20" />
 
-<h3>Campaigns</h3>
+          <label for="category">Category</label>
+          <input id="category" placeholder="Featured" />
 
-<button onclick="loadCampaigns()">
-    Load Campaigns
-</button>
+          <label for="rewardType">Reward Type</label>
+          <select id="rewardType">
+            <option value="install">Install</option>
+            <option value="event">Event</option>
+            <option value="multi_event">Multi Event</option>
+          </select>
 
-<ul id="campaigns"></ul>
+          <label for="status">Status</label>
+          <select id="status">
+            <option value="active">Active</option>
+            <option value="paused">Paused</option>
+          </select>
 
+          <label for="ctaText">CTA Text</label>
+          <input id="ctaText" placeholder="Install & Earn" />
 
-<h3>Withdraw Requests</h3>
+          <label for="iconUrl">Icon URL</label>
+          <input id="iconUrl" placeholder="https://..." />
 
-<button onclick="loadWithdraws()">
-    Load Withdraws
-</button>
+          <label for="bannerUrl">Banner URL</label>
+          <input id="bannerUrl" placeholder="https://..." />
 
-<ul id="withdraws"></ul>
+          <label for="shortDescription">Short Description</label>
+          <textarea id="shortDescription" placeholder="Short summary shown in Rakivo cards"></textarea>
 
+          <label for="longDescription">Long Description</label>
+          <textarea id="longDescription" placeholder="Detailed description for future offer details pages"></textarea>
 
-<script src="script.js"></script>
+          <label for="trackierUrl">Trackier Click URL</label>
+          <textarea id="trackierUrl" placeholder="https://...sub1={user_id}&sub2={click_ref}"></textarea>
 
+          <label for="terms">Terms</label>
+          <textarea id="terms" placeholder="Reward terms and exclusions"></textarea>
+
+          <div class="form-actions" style="margin-top:16px;">
+            <button id="saveOfferButton">Save Offer</button>
+          </div>
+          <div id="formStatus" class="status"></div>
+        </section>
+
+        <section class="panel">
+          <div class="toolbar">
+            <div>
+              <h3>Offer Catalog</h3>
+              <div class="small">Edit or pause offers without touching the database directly.</div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Offer</th>
+                  <th>Status</th>
+                  <th>Payout</th>
+                  <th>Type</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="offersTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel" style="margin-top:16px;">
+        <div class="toolbar">
+          <div>
+            <h3>Withdrawal Monitor</h3>
+            <div class="small">Track Razorpay payout references and failures.</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Provider Ref</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody id="withdrawalsTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top:16px;">
+        <div class="toolbar">
+          <div>
+            <h3>Trackier Event Feed</h3>
+            <div class="small">Recent click/postback events normalized by Bifrost.</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Offer</th>
+                <th>Event</th>
+                <th>Status</th>
+                <th>Payout</th>
+                <th>Refs</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody id="trackierEventsTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top:16px;">
+        <div class="toolbar">
+          <div>
+            <h3>Offer Performance Report</h3>
+            <div class="small">Clicks, approvals, CVR, and tracked payout/revenue by offer.</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Offer</th>
+                <th>Clicks</th>
+                <th>Approvals</th>
+                <th>CVR</th>
+                <th>Payout</th>
+                <th>Revenue</th>
+              </tr>
+            </thead>
+            <tbody id="offerReportsTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top:16px;">
+        <div class="toolbar">
+          <div>
+            <h3>Fraud Signals</h3>
+            <div class="small">Users with suspicious click behavior in the last 24 hours.</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Clicks 24h</th>
+                <th>Offers 24h</th>
+                <th>Events 24h</th>
+                <th>CVR</th>
+                <th>Signal</th>
+              </tr>
+            </thead>
+            <tbody id="fraudSignalsTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top:16px;">
+        <div class="toolbar">
+          <div>
+            <h3>Cohort Snapshot</h3>
+            <div class="small">Daily signup cohorts and downstream activation.</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Cohort Day</th>
+                <th>Signups</th>
+                <th>Converted Users</th>
+                <th>Activation Rate</th>
+                <th>Payout</th>
+              </tr>
+            </thead>
+            <tbody id="cohortReportsTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top:16px;">
+        <div class="toolbar">
+          <div>
+            <h3>Referral Leaders</h3>
+            <div class="small">Top referrers by invited users and downstream reward activity.</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Referrer</th>
+                <th>Referral Code</th>
+                <th>Users</th>
+                <th>Events</th>
+                <th>Payout</th>
+              </tr>
+            </thead>
+            <tbody id="referralReportsTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top:16px;">
+        <div class="toolbar">
+          <div>
+            <h3>Event Goals</h3>
+            <div class="small">Track install and post-install events by status and value.</div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Event</th>
+                <th>Status</th>
+                <th>Total Events</th>
+                <th>Users</th>
+                <th>Payout</th>
+                <th>Revenue</th>
+              </tr>
+            </thead>
+            <tbody id="eventReportsTable"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </div>
+
+  <script src="script.js"></script>
 </body>
-
 </html>

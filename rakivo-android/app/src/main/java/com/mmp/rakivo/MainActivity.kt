@@ -8,6 +8,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.mmp.rakivo.activities.LoginActivity
 import com.mmp.rakivo.activities.WalletActivity
 import com.mmp.rakivo.adapter.CampaignAdapter
+import com.mmp.rakivo.analytics.RakivoAnalytics
 import com.mmp.rakivo.api.ApiClient
 import com.mmp.rakivo.databinding.ActivityMainBinding
 import com.mmp.rakivo.model.Campaign
@@ -30,6 +31,9 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        RakivoAnalytics.setUserId(Pref.userId)
+        RakivoAnalytics.setUserState("logged_in")
+        RakivoAnalytics.logScreen("home")
 
         setSupportActionBar(binding.toolbar)
         supportActionBar?.title = ""
@@ -70,10 +74,12 @@ class MainActivity : AppCompatActivity() {
                     if (list.isNullOrEmpty()) {
                         binding.txtEmpty.visibility = View.VISIBLE
                         binding.txtSectionTitle.text = "Featured offers"
+                        RakivoAnalytics.logOffersLoaded(0)
                     } else {
                         binding.txtSectionTitle.text = "Featured offers (${list.size})"
                         binding.recyclerView.visibility = View.VISIBLE
                         binding.recyclerView.adapter = CampaignAdapter(this@MainActivity, list)
+                        RakivoAnalytics.logOffersLoaded(list.size)
                     }
                 } else {
                     showError()

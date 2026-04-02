@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.mmp.rakivo.MainActivity
+import com.mmp.rakivo.analytics.RakivoAnalytics
 import com.mmp.rakivo.api.ApiClient
 import com.mmp.rakivo.api.backendErrorMessage
 import com.mmp.rakivo.databinding.ActivityLoginBinding
@@ -27,6 +28,9 @@ class LoginActivity : AppCompatActivity() {
         binding = ActivityLoginBinding.inflate(layoutInflater)
         setContentView(binding.root)
         Pref.clearSession()
+        RakivoAnalytics.clearUser()
+        RakivoAnalytics.setUserState("anonymous")
+        RakivoAnalytics.logScreen("login")
         renderOtpState()
 
         binding.btnLogin.setOnClickListener {
@@ -78,6 +82,14 @@ class LoginActivity : AppCompatActivity() {
                             ProfileActivity::class.java
                         }
 
+                        RakivoAnalytics.logLoginSuccess(
+                            channel = channel,
+                            userId = userId,
+                            nextScreen = nextScreen.simpleName
+                        )
+                        RakivoAnalytics.setUserState(
+                            if (nextScreen == MainActivity::class.java) "wallet_ready" else "onboarding"
+                        )
                         startActivity(Intent(this@LoginActivity, nextScreen))
                         finishAffinity()
                     } else {
@@ -101,6 +113,7 @@ class LoginActivity : AppCompatActivity() {
     private fun requestOtp(channel: String, identifier: String) {
         binding.progress.visibility = View.VISIBLE
         binding.btnLogin.isEnabled = false
+        RakivoAnalytics.logOtpRequested(channel)
 
         ApiClient.api.requestOtp(
             RequestOtpRequest(channel = channel, target = identifier)

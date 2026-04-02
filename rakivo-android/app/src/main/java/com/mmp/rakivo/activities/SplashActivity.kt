@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import com.mmp.rakivo.R
+import com.mmp.rakivo.analytics.RakivoAnalytics
 import com.mmp.rakivo.utils.Pref
 
 @SuppressLint("CustomSplashScreen")
@@ -14,6 +15,7 @@ class SplashActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         setContentView(R.layout.activity_splash)
+        RakivoAnalytics.logScreen("splash")
 
         val nextScreen = if (Pref.userId == 0) {
             LoginActivity::class.java

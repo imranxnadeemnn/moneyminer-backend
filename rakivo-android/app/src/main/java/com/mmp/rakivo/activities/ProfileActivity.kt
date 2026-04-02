@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.mmp.rakivo.MainActivity
+import com.mmp.rakivo.analytics.RakivoAnalytics
 import com.mmp.rakivo.api.ApiClient
 import com.mmp.rakivo.api.backendErrorMessage
 import com.mmp.rakivo.databinding.ActivityProfileBinding
@@ -36,6 +37,8 @@ class ProfileActivity : AppCompatActivity() {
 
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.title = "Profile Setup"
+        RakivoAnalytics.logScreen("profile_setup")
+        RakivoAnalytics.setUserState("onboarding")
 
         binding.radioPayoutMode.setOnCheckedChangeListener { _, checkedId ->
             currentPayoutMode = if (checkedId == binding.radioBank.id) "bank_account" else "upi"
@@ -173,6 +176,10 @@ class ProfileActivity : AppCompatActivity() {
                 binding.progress.visibility = View.GONE
                 if (response.isSuccessful) {
                     Toast.makeText(this@ProfileActivity, "Profile saved", Toast.LENGTH_SHORT).show()
+                    RakivoAnalytics.logProfileSaved(
+                        hasEmail = email.isNotBlank(),
+                        hasPhone = phone.isNotBlank()
+                    )
                     loadOnboarding()
                 } else {
                     Toast.makeText(
@@ -239,6 +246,7 @@ class ProfileActivity : AppCompatActivity() {
                         "missing_credentials" -> "Payout saved. Razorpay sync is pending backend credentials."
                         else -> "Payout method saved"
                     }
+                    RakivoAnalytics.logPayoutMethodSaved(currentPayoutMode, syncStatus)
                     Toast.makeText(this@ProfileActivity, message, Toast.LENGTH_SHORT).show()
                     loadOnboarding()
                 } else {

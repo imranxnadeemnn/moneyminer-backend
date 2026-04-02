@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.mmp.rakivo.R
+import com.mmp.rakivo.analytics.RakivoAnalytics
 import com.mmp.rakivo.api.ApiClient
 import com.mmp.rakivo.api.backendErrorMessage
 import com.mmp.rakivo.model.Campaign
@@ -78,6 +79,12 @@ class CampaignAdapter(
             }
 
             holder.btnInstall.isEnabled = false
+            RakivoAnalytics.logOfferClick(
+                offerId = item.campaignId,
+                title = item.title,
+                rewardType = item.rewardType,
+                payout = item.payout
+            )
             ApiClient.api.offerClick(
                 item.campaignId,
                 OfferClickRequest(userId = Pref.userId)

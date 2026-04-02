@@ -5,6 +5,7 @@ import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.mmp.rakivo.activities.LoginActivity
+import com.mmp.rakivo.analytics.RakivoAnalytics
 import com.mmp.rakivo.api.ApiClient
 import com.mmp.rakivo.api.backendErrorMessage
 import com.mmp.rakivo.databinding.ActivityKycBinding
@@ -33,6 +34,7 @@ class KycActivity : AppCompatActivity() {
 
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.title = "Complete KYC"
+        RakivoAnalytics.logScreen("kyc")
 
         binding.btnSubmit.setOnClickListener {
             submitKyc()
@@ -96,6 +98,7 @@ class KycActivity : AppCompatActivity() {
                 ) {
                     binding.progress.visibility = View.GONE
                     if (response.isSuccessful) {
+                        RakivoAnalytics.logKycSubmitted()
                         Toast.makeText(
                             this@KycActivity,
                             "KYC submitted",

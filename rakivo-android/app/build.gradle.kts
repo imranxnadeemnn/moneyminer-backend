@@ -3,6 +3,10 @@ plugins {
     alias(libs.plugins.kotlin.android)
 }
 
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.mmp.rakivo"
     compileSdk = 35
@@ -58,6 +62,8 @@ dependencies {
     implementation(libs.retrofit.gson)
     implementation(libs.glide)
     implementation(libs.play.services.ads.identifier)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.mmp.rakivo.MainActivity
 import com.mmp.rakivo.R
+import com.mmp.rakivo.analytics.RakivoAnalytics
 import com.mmp.rakivo.api.ApiClient
 import com.mmp.rakivo.api.backendErrorMessage
 import com.mmp.rakivo.databinding.ActivityWalletBinding
@@ -46,6 +47,8 @@ class WalletActivity : AppCompatActivity() {
 
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.title = "Wallet"
+        RakivoAnalytics.logScreen("wallet")
+        RakivoAnalytics.setUserState("wallet_ready")
 
         fetchWallet()
         handler.post(refreshRunnable)
@@ -146,6 +149,7 @@ class WalletActivity : AppCompatActivity() {
                     "Complete profile, KYC, and payout setup before withdrawal."
                 }
                 binding.btnKyc.text = if (onboarding.kycCompleted) "Review KYC" else "Complete KYC"
+                RakivoAnalytics.logWalletViewed(canWithdraw)
             }
 
             override fun onFailure(call: Call<OnboardingResponse>, t: Throwable) {
@@ -167,6 +171,7 @@ class WalletActivity : AppCompatActivity() {
         }
 
         binding.progress.visibility = View.VISIBLE
+        RakivoAnalytics.logWithdrawalRequested(10)
         val body = WithdrawRequest(
             userId = Pref.userId,
             amount = 10
