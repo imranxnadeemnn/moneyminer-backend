@@ -27,7 +27,7 @@ async function initializeDatabase() {
 
 // ================= ROOT =================
 app.get("/", (req, res) => {
-    res.send("Bifrost Trackier backend running")
+    res.send("Server running")
 })
 
 
@@ -265,7 +265,7 @@ async function startServer() {
     try {
         await initializeDatabase()
 
-        app.listen(PORT, "0.0.0.0", () => {
+        app.listen(process.env.PORT || 3000, "0.0.0.0", () => {
             console.log("Bifrost running on " + PORT)
         })
     } catch (err) {
