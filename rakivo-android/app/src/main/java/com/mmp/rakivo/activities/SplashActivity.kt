@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import com.mmp.rakivo.R
+import com.mmp.rakivo.utils.Pref
 
 @SuppressLint("CustomSplashScreen")
 class SplashActivity : AppCompatActivity() {
@@ -14,7 +15,13 @@ class SplashActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_splash)
 
-        startActivity(Intent(this, LoginActivity::class.java))
+        val nextScreen = if (Pref.userId == 0) {
+            LoginActivity::class.java
+        } else {
+            ProfileActivity::class.java
+        }
+
+        startActivity(Intent(this, nextScreen))
 
         finish()
     }

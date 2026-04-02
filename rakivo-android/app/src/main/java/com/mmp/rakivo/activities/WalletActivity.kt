@@ -13,6 +13,7 @@ import com.mmp.rakivo.api.ApiClient
 import com.mmp.rakivo.api.backendErrorMessage
 import com.mmp.rakivo.databinding.ActivityWalletBinding
 import com.mmp.rakivo.model.ApiResponse
+import com.mmp.rakivo.model.OnboardingResponse
 import com.mmp.rakivo.model.WalletResponse
 import com.mmp.rakivo.model.WithdrawRequest
 import com.mmp.rakivo.utils.Pref
@@ -23,6 +24,7 @@ import retrofit2.Response
 class WalletActivity : AppCompatActivity() {
     private lateinit var binding: ActivityWalletBinding
     private val handler = Handler(Looper.getMainLooper())
+    private var canWithdraw = false
 
     private val refreshRunnable = object : Runnable {
         override fun run() {
@@ -48,18 +50,16 @@ class WalletActivity : AppCompatActivity() {
         fetchWallet()
         handler.post(refreshRunnable)
 
-        binding.btnWithdraw.setOnClickListener {
-            withdraw()
-        }
-
+        binding.btnWithdraw.setOnClickListener { withdraw() }
         binding.btnViewHistory.setOnClickListener {
             startActivity(Intent(this, HistoryActivity::class.java))
         }
-
         binding.btnKyc.setOnClickListener {
             startActivity(Intent(this, KycActivity::class.java))
         }
-
+        binding.btnProfileSetup.setOnClickListener {
+            startActivity(Intent(this, ProfileActivity::class.java))
+        }
         binding.btnLogout.setOnClickListener {
             Pref.clearSession()
             val intent = Intent(this, LoginActivity::class.java)
@@ -85,6 +85,11 @@ class WalletActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        fetchOnboarding()
+    }
+
     private fun fetchWallet(showProgress: Boolean = true) {
         if (showProgress) binding.progress.visibility = View.VISIBLE
         ApiClient.api.wallet(Pref.userId).enqueue(object : Callback<WalletResponse?> {
@@ -102,12 +107,65 @@ class WalletActivity : AppCompatActivity() {
 
             override fun onFailure(call: Call<WalletResponse?>, t: Throwable) {
                 if (showProgress) binding.progress.visibility = View.GONE
-                if (showProgress) Toast.makeText(this@WalletActivity, "Failed to fetch balance", Toast.LENGTH_SHORT).show()
+                if (showProgress) {
+                    Toast.makeText(
+                        this@WalletActivity,
+                        "Failed to fetch balance",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        })
+    }
+
+    private fun fetchOnboarding() {
+        ApiClient.api.onboarding(Pref.userId).enqueue(object : Callback<OnboardingResponse> {
+            override fun onResponse(
+                call: Call<OnboardingResponse>,
+                response: Response<OnboardingResponse>
+            ) {
+                if (!response.isSuccessful) {
+                    canWithdraw = false
+                    binding.btnWithdraw.isEnabled = false
+                    return
+                }
+
+                val onboarding = response.body()?.onboarding ?: return
+                canWithdraw =
+                    onboarding.profileCompleted && onboarding.kycCompleted && onboarding.payoutCompleted
+                binding.btnWithdraw.isEnabled = canWithdraw
+                binding.tvProfileStatus.text =
+                    if (onboarding.profileCompleted) "Profile complete" else "Profile pending"
+                binding.tvKycStatus.text =
+                    if (onboarding.kycCompleted) "KYC submitted" else "KYC pending"
+                binding.tvPayoutStatus.text =
+                    if (onboarding.payoutCompleted) "Payout method active" else "Payout method pending"
+                binding.tvWalletHint.text = if (canWithdraw) {
+                    "Your account is ready for withdrawals."
+                } else {
+                    "Complete profile, KYC, and payout setup before withdrawal."
+                }
+                binding.btnKyc.text = if (onboarding.kycCompleted) "Review KYC" else "Complete KYC"
+            }
+
+            override fun onFailure(call: Call<OnboardingResponse>, t: Throwable) {
+                canWithdraw = false
+                binding.btnWithdraw.isEnabled = false
+                binding.tvWalletHint.text = "We couldn't refresh onboarding status right now."
             }
         })
     }
 
     private fun withdraw() {
+        if (!canWithdraw) {
+            Toast.makeText(
+                this,
+                "Complete profile, KYC, and payout setup before withdrawal",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
         binding.progress.visibility = View.VISIBLE
         val body = WithdrawRequest(
             userId = Pref.userId,
@@ -118,7 +176,8 @@ class WalletActivity : AppCompatActivity() {
             override fun onResponse(call: Call<ApiResponse>, response: Response<ApiResponse>) {
                 binding.progress.visibility = View.GONE
                 if (response.isSuccessful) {
-                    Toast.makeText(this@WalletActivity, "Withdrawal successful!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@WalletActivity, "Withdrawal successful!", Toast.LENGTH_SHORT)
+                        .show()
                     fetchWallet()
                 } else {
                     Toast.makeText(
@@ -131,7 +190,8 @@ class WalletActivity : AppCompatActivity() {
 
             override fun onFailure(call: Call<ApiResponse>, t: Throwable) {
                 binding.progress.visibility = View.GONE
-                Toast.makeText(this@WalletActivity, "Error: ${t.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@WalletActivity, "Error: ${t.message}", Toast.LENGTH_SHORT)
+                    .show()
             }
         })
     }

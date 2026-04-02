@@ -63,11 +63,22 @@ class LoginActivity : AppCompatActivity() {
                     binding.btnLogin.isEnabled = true
 
                     if (response.isSuccessful) {
-                        val userId = response.body()?.userId ?: 0
+                        val auth = response.body()
+                        val userId = auth?.userId ?: 0
                         Pref.userId = userId
                         Pref.token = null
 
-                        startActivity(Intent(this@LoginActivity, MainActivity::class.java))
+                        val nextScreen = if (
+                            auth?.profileCompleted == true &&
+                            auth.kycCompleted &&
+                            auth.payoutCompleted
+                        ) {
+                            MainActivity::class.java
+                        } else {
+                            ProfileActivity::class.java
+                        }
+
+                        startActivity(Intent(this@LoginActivity, nextScreen))
                         finishAffinity()
                     } else {
                         Toast.makeText(

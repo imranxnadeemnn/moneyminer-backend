@@ -6,6 +6,11 @@ const db = require("./db")
 const app = express()
 const PORT = process.env.PORT || 3000
 const DEMO_OTP = "1234"
+const RAZORPAY_KEY_ID = String(process.env.RAZORPAY_KEY_ID || "").trim()
+const RAZORPAY_KEY_SECRET = String(process.env.RAZORPAY_KEY_SECRET || "").trim()
+const RAZORPAY_BASE_URL = String(process.env.RAZORPAY_BASE_URL || "https://api.razorpay.com").trim()
+const RAZORPAY_SOURCE_ACCOUNT_NUMBER = String(process.env.RAZORPAY_SOURCE_ACCOUNT_NUMBER || "").trim()
+const RAZORPAY_BANK_PAYOUT_MODE = String(process.env.RAZORPAY_BANK_PAYOUT_MODE || "IMPS").trim().toUpperCase()
 
 let adminToken = null
 
@@ -78,6 +83,298 @@ function mapOffer(row) {
   }
 }
 
+function mapPaymentMethod(row) {
+  if (!row) {
+    return null
+  }
+
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    provider: row.provider || "razorpay",
+    method_type: row.method_type,
+    payout_mode: row.payout_mode || row.method_type || "upi",
+    upi_id: row.upi_id || "",
+    account_name: row.account_name || "",
+    account_number: row.account_number || "",
+    ifsc: row.ifsc || "",
+    contact_email: row.contact_email || "",
+    contact_phone: row.contact_phone || "",
+    razorpay_contact_id: row.razorpay_contact_id || "",
+    razorpay_fund_account_id: row.razorpay_fund_account_id || "",
+    status: row.status || "active",
+    created_at: row.created_at
+  }
+}
+
+function razorpayConfigured() {
+  return hasValue(RAZORPAY_KEY_ID) && hasValue(RAZORPAY_KEY_SECRET)
+}
+
+async function razorpayRequest(method, path, payload, extraHeaders = {}) {
+  if (!razorpayConfigured()) {
+    return {
+      success: false,
+      reason: "missing_credentials"
+    }
+  }
+
+  const headers = {
+    Authorization: `Basic ${Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString("base64")}`,
+    ...extraHeaders
+  }
+
+  if (payload !== undefined) {
+    headers["Content-Type"] = "application/json"
+  }
+
+  const response = await fetch(`${RAZORPAY_BASE_URL}${path}`, {
+    method,
+    headers,
+    body: payload !== undefined ? JSON.stringify(payload) : undefined
+  })
+
+  const text = await response.text()
+  let data = {}
+
+  if (text) {
+    try {
+      data = JSON.parse(text)
+    } catch (err) {
+      data = { raw: text }
+    }
+  }
+
+  if (!response.ok) {
+    const message = data?.error?.description || data?.error?.reason || data?.error?.message || "Razorpay request failed"
+    return {
+      success: false,
+      reason: message,
+      payload: data
+    }
+  }
+
+  return {
+    success: true,
+    data
+  }
+}
+
+async function syncPaymentMethodToRazorpay(paymentMethod, userProfile) {
+  if (!paymentMethod) {
+    return {
+      success: false,
+      reason: "payment_method_missing"
+    }
+  }
+
+  if (paymentMethod.provider !== "razorpay") {
+    return {
+      success: false,
+      reason: "unsupported_provider"
+    }
+  }
+
+  if (!razorpayConfigured()) {
+    return {
+      success: false,
+      reason: "missing_credentials"
+    }
+  }
+
+  const contactPayload = {
+    name: paymentMethod.account_name || userProfile?.full_name || `Rakivo User ${paymentMethod.user_id}`,
+    email: paymentMethod.contact_email || userProfile?.email || undefined,
+    contact: paymentMethod.contact_phone || userProfile?.phone || undefined,
+    type: "employee",
+    reference_id: `rakivo_user_${paymentMethod.user_id}`,
+    notes: {
+      user_id: String(paymentMethod.user_id),
+      provider: "rakivo"
+    }
+  }
+
+  const contactResult = await razorpayRequest("POST", "/v1/contacts", contactPayload)
+  if (!contactResult.success) {
+    return contactResult
+  }
+
+  const contactId = contactResult.data.id
+  const fundAccountPayload = paymentMethod.payout_mode === "bank_account"
+    ? {
+        contact_id: contactId,
+        account_type: "bank_account",
+        bank_account: {
+          name: paymentMethod.account_name,
+          ifsc: paymentMethod.ifsc,
+          account_number: paymentMethod.account_number
+        }
+      }
+    : {
+        contact_id: contactId,
+        account_type: "vpa",
+        vpa: {
+          address: paymentMethod.upi_id
+        }
+      }
+
+  const fundAccountResult = await razorpayRequest("POST", "/v1/fund_accounts", fundAccountPayload)
+  if (!fundAccountResult.success) {
+    return fundAccountResult
+  }
+
+  const fundAccountId = fundAccountResult.data.id
+
+  await db.query(
+    `update payment_methods
+     set razorpay_contact_id=$1,
+         razorpay_fund_account_id=$2
+     where id=$3`,
+    [contactId, fundAccountId, paymentMethod.id]
+  )
+
+  const updatedPaymentMethod = await getActivePaymentMethod(paymentMethod.user_id)
+
+  return {
+    success: true,
+    data: updatedPaymentMethod
+  }
+}
+
+function razorpayPayoutMode(paymentMethod) {
+  return paymentMethod.payout_mode === "bank_account" ? RAZORPAY_BANK_PAYOUT_MODE : "UPI"
+}
+
+function razorpayPurposeForWithdrawal() {
+  return "payout"
+}
+
+async function createRazorpayPayout({ withdrawalId, userId, amount, paymentMethod }) {
+  if (!razorpayConfigured()) {
+    return {
+      success: false,
+      reason: "missing_credentials"
+    }
+  }
+
+  if (!hasValue(RAZORPAY_SOURCE_ACCOUNT_NUMBER)) {
+    return {
+      success: false,
+      reason: "missing_source_account"
+    }
+  }
+
+  if (!hasValue(paymentMethod?.razorpay_fund_account_id)) {
+    return {
+      success: false,
+      reason: "fund_account_not_synced"
+    }
+  }
+
+  const payoutPayload = {
+    account_number: RAZORPAY_SOURCE_ACCOUNT_NUMBER,
+    fund_account_id: paymentMethod.razorpay_fund_account_id,
+    amount: Math.round(Number(amount) * 100),
+    currency: "INR",
+    mode: razorpayPayoutMode(paymentMethod),
+    purpose: razorpayPurposeForWithdrawal(),
+    queue_if_low_balance: true,
+    reference_id: `rakivo_withdraw_${withdrawalId}`,
+    narration: "Rakivo payout",
+    notes: {
+      user_id: String(userId),
+      withdrawal_id: String(withdrawalId)
+    }
+  }
+
+  return razorpayRequest(
+    "POST",
+    "/v1/payouts",
+    payoutPayload,
+    {
+      "X-Payout-Idempotency": `rakivo-withdraw-${withdrawalId}`
+    }
+  )
+}
+
+async function fetchRazorpayPayout(providerRef) {
+  if (!hasValue(providerRef)) {
+    return {
+      success: false,
+      reason: "missing_provider_ref"
+    }
+  }
+
+  return razorpayRequest("GET", `/v1/payouts/${providerRef}`)
+}
+
+async function getOnboardingState(userId) {
+  const profileResult = await db.query(
+    `select u.user_id, p.full_name, p.email, p.phone, p.referral_code,
+            exists(select 1 from kyc k where k.user_id=u.user_id and k.status in ('submitted', 'approved')) as kyc_completed,
+            exists(
+              select 1
+              from payment_methods pm
+              where pm.user_id=u.user_id
+                and pm.status='active'
+                and (
+                  coalesce(pm.provider, 'razorpay') <> 'razorpay'
+                  or coalesce(pm.razorpay_fund_account_id, '') <> ''
+                )
+            ) as payout_completed
+     from users u
+     left join profiles p on p.user_id = u.user_id
+     where u.user_id=$1`,
+    [userId]
+  )
+
+  const row = profileResult.rows[0]
+
+  if (!row) {
+    return null
+  }
+
+  const profileCompleted = hasValue(row.full_name) && (hasValue(row.email) || hasValue(row.phone))
+
+  return {
+    user_id: row.user_id,
+    full_name: row.full_name || "",
+    email: row.email || "",
+    phone: row.phone || "",
+    referral_code: row.referral_code || "",
+    profile_completed: profileCompleted,
+    kyc_completed: Boolean(row.kyc_completed),
+    payout_completed: Boolean(row.payout_completed)
+  }
+}
+
+async function getActivePaymentMethod(userId) {
+  const paymentResult = await db.query(
+    `select id, user_id, provider, method_type, payout_mode, upi_id, account_name,
+            account_number, ifsc, contact_email, contact_phone,
+            razorpay_contact_id, razorpay_fund_account_id, status, created_at
+     from payment_methods
+     where user_id=$1 and status='active'
+     order by created_at desc
+     limit 1`,
+    [userId]
+  )
+
+  return mapPaymentMethod(paymentResult.rows[0] || null)
+}
+
+async function getKycRecord(userId) {
+  const kycResult = await db.query(
+    `select id, user_id, name, pan, upi, status, created_at
+     from kyc
+     where user_id=$1
+     limit 1`,
+    [userId]
+  )
+
+  return kycResult.rows[0] || null
+}
+
 app.disable("x-powered-by")
 app.use(cors())
 app.use(express.json())
@@ -132,12 +429,29 @@ async function initDB() {
     create table if not exists payment_methods (
       id serial primary key,
       user_id int not null references users(user_id) on delete cascade,
+      provider text default 'razorpay',
       method_type text not null,
+      payout_mode text default 'upi',
       upi_id text,
       account_name text,
+      account_number text,
+      ifsc text,
+      contact_email text,
+      contact_phone text,
+      razorpay_contact_id text,
+      razorpay_fund_account_id text,
       status text default 'active',
       created_at timestamp default current_timestamp
     );
+
+    alter table payment_methods add column if not exists provider text default 'razorpay';
+    alter table payment_methods add column if not exists payout_mode text default 'upi';
+    alter table payment_methods add column if not exists account_number text;
+    alter table payment_methods add column if not exists ifsc text;
+    alter table payment_methods add column if not exists contact_email text;
+    alter table payment_methods add column if not exists contact_phone text;
+    alter table payment_methods add column if not exists razorpay_contact_id text;
+    alter table payment_methods add column if not exists razorpay_fund_account_id text;
 
     create table if not exists wallets (
       id serial primary key,
@@ -213,8 +527,19 @@ async function initDB() {
       user_id int,
       amount numeric,
       status text,
+      provider text,
+      provider_ref text,
+      provider_status text,
+      provider_error text,
+      updated_at timestamp default current_timestamp,
       created_at timestamp default current_timestamp
     );
+
+    alter table withdraws add column if not exists provider text;
+    alter table withdraws add column if not exists provider_ref text;
+    alter table withdraws add column if not exists provider_status text;
+    alter table withdraws add column if not exists provider_error text;
+    alter table withdraws add column if not exists updated_at timestamp default current_timestamp;
 
     create table if not exists kyc (
       id serial primary key,
@@ -347,24 +672,14 @@ async function ensureUserForIdentity(identity) {
 }
 
 async function buildAuthResponse(userId) {
-  const profileResult = await db.query(
-    `select p.full_name, p.email, p.phone,
-            exists(select 1 from kyc k where k.user_id = p.user_id and k.status in ('submitted', 'approved')) as kyc_completed,
-            exists(select 1 from payment_methods pm where pm.user_id = p.user_id and pm.status='active') as payout_completed
-     from profiles p
-     where p.user_id=$1`,
-    [userId]
-  )
-
-  const profile = profileResult.rows[0] || {}
-  const profileCompleted = hasValue(profile.full_name) && (hasValue(profile.email) || hasValue(profile.phone))
+  const profile = await getOnboardingState(userId)
 
   return {
     success: true,
     user_id: userId,
-    profile_completed: profileCompleted,
-    kyc_completed: Boolean(profile.kyc_completed),
-    payout_completed: Boolean(profile.payout_completed)
+    profile_completed: Boolean(profile?.profile_completed),
+    kyc_completed: Boolean(profile?.kyc_completed),
+    payout_completed: Boolean(profile?.payout_completed)
   }
 }
 
@@ -630,23 +945,44 @@ app.get("/me", async (req, res) => {
       return sendError(res, 400, "Valid user_id is required")
     }
 
-    const result = await db.query(
-      `select u.user_id, p.full_name, p.email, p.phone, p.referral_code,
-              exists(select 1 from kyc k where k.user_id=u.user_id and k.status in ('submitted', 'approved')) as kyc_completed,
-              exists(select 1 from payment_methods pm where pm.user_id=u.user_id and pm.status='active') as payout_completed
-       from users u
-       left join profiles p on p.user_id = u.user_id
-       where u.user_id=$1`,
-      [userId]
-    )
+    const onboarding = await getOnboardingState(userId)
 
-    if (!result.rows[0]) {
+    if (!onboarding) {
       return sendError(res, 404, "User not found")
     }
 
     res.json({
       success: true,
-      user: result.rows[0]
+      user: onboarding
+    })
+  } catch (err) {
+    console.error(err)
+    sendError(res, 500, err.message)
+  }
+})
+
+app.get("/me/onboarding", async (req, res) => {
+  try {
+    const userId = Number(req.query.user_id)
+
+    if (!userId) {
+      return sendError(res, 400, "Valid user_id is required")
+    }
+
+    const onboarding = await getOnboardingState(userId)
+
+    if (!onboarding) {
+      return sendError(res, 404, "User not found")
+    }
+
+    const paymentMethod = await getActivePaymentMethod(userId)
+    const kycRecord = await getKycRecord(userId)
+
+    res.json({
+      success: true,
+      onboarding,
+      payment_method: paymentMethod,
+      kyc: kycRecord
     })
   } catch (err) {
     console.error(err)
@@ -709,11 +1045,37 @@ app.put("/me/profile", async (req, res) => {
 app.post("/me/payment-method", async (req, res) => {
   try {
     const userId = Number(req.body?.user_id)
+    const provider = String(req.body?.provider || "razorpay").trim().toLowerCase()
+    const payoutMode = String(req.body?.payout_mode || req.body?.method_type || "upi").trim().toLowerCase()
     const upiId = String(req.body?.upi_id || "").trim()
     const accountName = String(req.body?.account_name || "").trim()
+    const accountNumber = String(req.body?.account_number || "").trim()
+    const ifsc = String(req.body?.ifsc || "").trim().toUpperCase()
+    const contactEmail = String(req.body?.contact_email || "").trim().toLowerCase()
+    const contactPhone = String(req.body?.contact_phone || "").trim()
 
-    if (!userId || !hasValue(upiId)) {
-      return sendError(res, 400, "Valid user_id and upi_id are required")
+    if (!userId) {
+      return sendError(res, 400, "Valid user_id is required")
+    }
+
+    if (provider !== "razorpay") {
+      return sendError(res, 400, "Only razorpay payout provider is supported")
+    }
+
+    if (!["upi", "bank_account"].includes(payoutMode)) {
+      return sendError(res, 400, "Valid payout_mode is required")
+    }
+
+    if (!hasValue(accountName)) {
+      return sendError(res, 400, "account_name is required")
+    }
+
+    if (payoutMode === "upi" && !hasValue(upiId)) {
+      return sendError(res, 400, "upi_id is required for Razorpay UPI payouts")
+    }
+
+    if (payoutMode === "bank_account" && (!hasValue(accountNumber) || !hasValue(ifsc))) {
+      return sendError(res, 400, "account_number and ifsc are required for Razorpay bank payouts")
     }
 
     await db.query(
@@ -722,15 +1084,54 @@ app.post("/me/payment-method", async (req, res) => {
     )
 
     const result = await db.query(
-      `insert into payment_methods(user_id, method_type, upi_id, account_name, status)
-       values($1, 'upi', $2, $3, 'active')
+      `insert into payment_methods(
+          user_id, provider, method_type, payout_mode, upi_id, account_name,
+          account_number, ifsc, contact_email, contact_phone, status
+       )
+       values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active')
        returning *`,
-      [userId, upiId, hasValue(accountName) ? accountName : null]
+      [
+        userId,
+        provider,
+        payoutMode,
+        payoutMode,
+        hasValue(upiId) ? upiId : null,
+        accountName,
+        hasValue(accountNumber) ? accountNumber : null,
+        hasValue(ifsc) ? ifsc : null,
+        hasValue(contactEmail) ? contactEmail : null,
+        hasValue(contactPhone) ? contactPhone : null
+      ]
     )
+
+    const onboarding = await getOnboardingState(userId)
+    const syncedPaymentMethod = mapPaymentMethod(result.rows[0])
+    const razorpaySync = await syncPaymentMethodToRazorpay(syncedPaymentMethod, onboarding)
 
     res.json({
       success: true,
-      payment_method: result.rows[0]
+      payment_method: razorpaySync.success ? razorpaySync.data : syncedPaymentMethod,
+      razorpay_sync_status: razorpaySync.success ? "synced" : razorpaySync.reason
+    })
+  } catch (err) {
+    console.error(err)
+    sendError(res, 500, err.message)
+  }
+})
+
+app.get("/me/payment-method", async (req, res) => {
+  try {
+    const userId = Number(req.query.user_id)
+
+    if (!userId) {
+      return sendError(res, 400, "Valid user_id is required")
+    }
+
+    const paymentMethod = await getActivePaymentMethod(userId)
+
+    res.json({
+      success: true,
+      payment_method: paymentMethod
     })
   } catch (err) {
     console.error(err)
@@ -800,9 +1201,54 @@ app.post("/withdraw", async (req, res) => {
       return sendError(res, 404, "Wallet not found")
     }
 
+    const kycRecord = await getKycRecord(Number(user_id))
+    if (!kycRecord || !["submitted", "approved"].includes(String(kycRecord.status || "").toLowerCase())) {
+      return sendError(res, 400, "Complete KYC before withdrawal")
+    }
+
+    const paymentMethod = await getActivePaymentMethod(Number(user_id))
+    if (!paymentMethod) {
+      return sendError(res, 400, "Add an active payout method before withdrawal")
+    }
+
+    if (!hasValue(paymentMethod.razorpay_fund_account_id)) {
+      return sendError(res, 400, "Payout method is not synced with Razorpay yet")
+    }
+
     if (Number(wallet.balance) < withdrawalAmount) {
       return sendError(res, 400, "Insufficient balance")
     }
+
+    const withdrawalInsert = await db.query(
+      `insert into withdraws (user_id, amount, status, provider, provider_status, updated_at)
+       values ($1, $2, 'initiated', 'razorpay', 'initiated', current_timestamp)
+       returning *`,
+      [user_id, withdrawalAmount]
+    )
+    const withdrawal = withdrawalInsert.rows[0]
+
+    const payoutResult = await createRazorpayPayout({
+      withdrawalId: withdrawal.id,
+      userId: Number(user_id),
+      amount: withdrawalAmount,
+      paymentMethod
+    })
+
+    if (!payoutResult.success) {
+      await db.query(
+        `update withdraws
+         set status='failed',
+             provider='razorpay',
+             provider_status='failed',
+             provider_error=$1,
+             updated_at=current_timestamp
+         where id=$2`,
+        [payoutResult.reason, withdrawal.id]
+      )
+      return sendError(res, 400, `Withdrawal could not be created: ${payoutResult.reason}`)
+    }
+
+    const payout = payoutResult.data || {}
 
     await db.query(
       "update wallets set balance = balance - $1 where user_id=$2",
@@ -811,17 +1257,117 @@ app.post("/withdraw", async (req, res) => {
 
     await db.query(
       `insert into wallet_ledger (user_id, entry_type, amount, reference_type, reference_id, status)
-       values ($1, 'debit', $2, 'withdraw', $3, 'confirmed')`,
-      [user_id, -withdrawalAmount, `wd_${Date.now()}`]
+       values ($1, 'debit', $2, 'withdraw', $3, $4)`,
+      [user_id, -withdrawalAmount, payout.id || `wd_${withdrawal.id}`, payout.status || "pending"]
     )
 
     await db.query(
-      `insert into withdraws (user_id, amount, status)
-      values ($1, $2, 'pending')`,
-      [user_id, withdrawalAmount]
+      `update withdraws
+       set status=$1,
+           provider='razorpay',
+           provider_ref=$2,
+           provider_status=$3,
+           provider_error=null,
+           updated_at=current_timestamp
+       where id=$4`,
+      [
+        payout.status || "pending",
+        payout.id || null,
+        payout.status || "pending",
+        withdrawal.id
+      ]
     )
 
-    res.json({ success: true })
+    res.json({
+      success: true,
+      withdrawal_id: withdrawal.id,
+      provider: "razorpay",
+      provider_ref: payout.id || null,
+      provider_status: payout.status || "pending"
+    })
+  } catch (err) {
+    console.error(err)
+    sendError(res, 500, err.message)
+  }
+})
+
+app.get("/withdrawals/:id", async (req, res) => {
+  try {
+    const userId = Number(req.params.id)
+
+    if (!userId) {
+      return sendError(res, 400, "Valid user_id is required")
+    }
+
+    const result = await db.query(
+      `select id, user_id, amount, status, provider, provider_ref, provider_status, provider_error, updated_at, created_at
+       from withdraws
+       where user_id=$1
+       order by created_at desc`,
+      [userId]
+    )
+
+    res.json(result.rows)
+  } catch (err) {
+    console.error(err)
+    sendError(res, 500, err.message)
+  }
+})
+
+app.post("/withdrawals/:withdrawalId/sync", async (req, res) => {
+  try {
+    const withdrawalId = Number(req.params.withdrawalId)
+
+    if (!withdrawalId) {
+      return sendError(res, 400, "Valid withdrawal id is required")
+    }
+
+    const withdrawalResult = await db.query(
+      `select *
+       from withdraws
+       where id=$1`,
+      [withdrawalId]
+    )
+
+    const withdrawal = withdrawalResult.rows[0]
+    if (!withdrawal) {
+      return sendError(res, 404, "Withdrawal not found")
+    }
+
+    if (!hasValue(withdrawal.provider_ref)) {
+      return sendError(res, 400, "Withdrawal does not have a Razorpay payout reference")
+    }
+
+    const payoutResult = await fetchRazorpayPayout(withdrawal.provider_ref)
+    if (!payoutResult.success) {
+      return sendError(res, 400, `Unable to sync payout: ${payoutResult.reason}`)
+    }
+
+    const payout = payoutResult.data || {}
+
+    await db.query(
+      `update withdraws
+       set status=$1,
+           provider_status=$2,
+           provider_error=null,
+           updated_at=current_timestamp
+       where id=$3`,
+      [payout.status || withdrawal.status, payout.status || withdrawal.provider_status, withdrawalId]
+    )
+
+    await db.query(
+      `update wallet_ledger
+       set status=$1
+       where user_id=$2 and reference_type='withdraw' and reference_id=$3`,
+      [payout.status || withdrawal.status, withdrawal.user_id, withdrawal.provider_ref]
+    )
+
+    res.json({
+      success: true,
+      withdrawal_id: withdrawalId,
+      provider_ref: withdrawal.provider_ref,
+      provider_status: payout.status || withdrawal.provider_status
+    })
   } catch (err) {
     console.error(err)
     sendError(res, 500, err.message)
@@ -848,6 +1394,26 @@ app.post("/kyc", async (req, res) => {
     )
 
     res.json({ success: true })
+  } catch (err) {
+    console.error(err)
+    sendError(res, 500, err.message)
+  }
+})
+
+app.get("/kyc/:id", async (req, res) => {
+  try {
+    const userId = Number(req.params.id)
+
+    if (!userId) {
+      return sendError(res, 400, "Valid user_id is required")
+    }
+
+    const kycRecord = await getKycRecord(userId)
+
+    res.json({
+      success: true,
+      kyc: kycRecord
+    })
   } catch (err) {
     console.error(err)
     sendError(res, 500, err.message)

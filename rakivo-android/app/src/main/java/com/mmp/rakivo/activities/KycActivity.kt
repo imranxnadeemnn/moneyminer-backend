@@ -10,6 +10,7 @@ import com.mmp.rakivo.api.backendErrorMessage
 import com.mmp.rakivo.databinding.ActivityKycBinding
 import com.mmp.rakivo.model.ApiResponse
 import com.mmp.rakivo.model.KycRequest
+import com.mmp.rakivo.model.KycStatusResponse
 import com.mmp.rakivo.utils.Pref
 import retrofit2.Call
 import retrofit2.Callback
@@ -36,6 +37,35 @@ class KycActivity : AppCompatActivity() {
         binding.btnSubmit.setOnClickListener {
             submitKyc()
         }
+
+        loadKyc()
+    }
+
+    private fun loadKyc() {
+        binding.progress.visibility = View.VISIBLE
+        ApiClient.api.kycStatus(Pref.userId).enqueue(object : Callback<KycStatusResponse> {
+            override fun onResponse(
+                call: Call<KycStatusResponse>,
+                response: Response<KycStatusResponse>
+            ) {
+                binding.progress.visibility = View.GONE
+                if (!response.isSuccessful) return
+
+                val kyc = response.body()?.kyc ?: return
+                binding.edtName.setText(kyc.name.orEmpty())
+                binding.edtPan.setText(kyc.pan.orEmpty())
+                binding.edtUpi.setText(kyc.upi.orEmpty())
+                binding.btnSubmit.text = if (kyc.status.isNullOrBlank()) {
+                    "Submit KYC"
+                } else {
+                    "Update KYC"
+                }
+            }
+
+            override fun onFailure(call: Call<KycStatusResponse>, t: Throwable) {
+                binding.progress.visibility = View.GONE
+            }
+        })
     }
 
 
