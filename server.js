@@ -153,7 +153,7 @@ app.post("/verify-otp", async (req, res) => {
 app.get("/campaigns", async (req, res) => {
   try {
     const result = await db.query(
-      "select * from campaigns where status=$1 order by id desc",
+      "select * from campaigns where status=$1",
       ["active"]
     )
 
