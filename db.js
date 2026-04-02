@@ -24,9 +24,40 @@ function normalizeConnectionString(value) {
   return connectionString
 }
 
-const connectionString = normalizeConnectionString(
-  process.env.DB_URL || process.env.DATABASE_URL
-)
+function isPoolerConnectionString(value) {
+  try {
+    return new URL(value).hostname.includes(".pooler.supabase.com")
+  } catch {
+    return false
+  }
+}
+
+function pickConnectionString() {
+  const candidates = [
+    {
+      source: "DB_URL",
+      value: normalizeConnectionString(process.env.DB_URL)
+    },
+    {
+      source: "DATABASE_URL",
+      value: normalizeConnectionString(process.env.DATABASE_URL)
+    }
+  ].filter((candidate) => candidate.value)
+
+  if (candidates.length === 0) {
+    return { source: null, value: "" }
+  }
+
+  // Prefer a direct Supabase connection over a pooler URL when both exist.
+  const preferred =
+    candidates.find((candidate) => !isPoolerConnectionString(candidate.value)) ||
+    candidates[0]
+
+  return preferred
+}
+
+const { source: connectionSource, value: connectionString } =
+  pickConnectionString()
 
 if (!connectionString) {
   throw new Error(
@@ -54,7 +85,7 @@ function formatDbError(err) {
 
     return new Error(
       "Supabase connection failed: tenant/user not found. " +
-      `Check Render DB_URL or DATABASE_URL. Current host=${host} port=${port} user=${user}. ` +
+      `Check Render DB_URL or DATABASE_URL. Using ${connectionSource}. Current host=${host} port=${port} user=${user}. ` +
       "For Supabase pooler connections, copy the exact connection string from Supabase Dashboard > Connect. " +
       "The username usually includes your project ref, for example postgres.<project-ref>."
     )
