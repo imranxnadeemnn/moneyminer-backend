@@ -32,8 +32,8 @@ function isPoolerConnectionString(value) {
   }
 }
 
-function pickConnectionString() {
-  const candidates = [
+function getConnectionCandidates() {
+  return [
     {
       source: "DB_URL",
       value: normalizeConnectionString(process.env.DB_URL)
@@ -43,12 +43,13 @@ function pickConnectionString() {
       value: normalizeConnectionString(process.env.DATABASE_URL)
     }
   ].filter((candidate) => candidate.value)
+}
 
+function pickConnectionString(candidates) {
   if (candidates.length === 0) {
     return { source: null, value: "" }
   }
 
-  // Prefer a direct Supabase connection over a pooler URL when both exist.
   const preferred =
     candidates.find((candidate) => !isPoolerConnectionString(candidate.value)) ||
     candidates[0]
@@ -56,8 +57,12 @@ function pickConnectionString() {
   return preferred
 }
 
-const { source: connectionSource, value: connectionString } =
-  pickConnectionString()
+const connectionCandidates = getConnectionCandidates()
+const primaryConnection = pickConnectionString(connectionCandidates)
+const fallbackConnection = connectionCandidates.find(
+  (candidate) => candidate.value !== primaryConnection.value
+)
+const { source: connectionSource, value: connectionString } = primaryConnection
 
 if (!connectionString) {
   throw new Error(
@@ -65,12 +70,27 @@ if (!connectionString) {
   )
 }
 
-const pool = new Pool({
-  connectionString,
-  ssl: {
-    rejectUnauthorized: false
-  }
-})
+function createPool(value) {
+  return new Pool({
+    connectionString: value,
+    ssl: {
+      rejectUnauthorized: false
+    }
+  })
+}
+
+const pool = createPool(connectionString)
+const fallbackPool = fallbackConnection
+  ? createPool(fallbackConnection.value)
+  : null
+
+function isNetworkUnreachableError(err) {
+  return err && (
+    err.code === "ENETUNREACH" ||
+    err.code === "EHOSTUNREACH" ||
+    err.code === "ECONNREFUSED"
+  )
+}
 
 function formatDbError(err) {
   if (
@@ -91,6 +111,15 @@ function formatDbError(err) {
     )
   }
 
+  if (isNetworkUnreachableError(err)) {
+    return new Error(
+      "Supabase direct database connection is unreachable from Render. " +
+      `Using ${connectionSource} failed with ${err.code}. ` +
+      "Render does not support IPv6 direct connections to Supabase. " +
+      "Use a Supabase pooler connection instead, or enable Supabase's IPv4 add-on."
+    )
+  }
+
   return err
 }
 
@@ -104,6 +133,19 @@ module.exports = {
     try {
       return await pool.query(...args)
     } catch (err) {
+      if (fallbackPool && isNetworkUnreachableError(err)) {
+        console.warn(
+          `Primary database connection via ${connectionSource} failed with ${err.code}. ` +
+          `Retrying with ${fallbackConnection.source}.`
+        )
+
+        try {
+          return await fallbackPool.query(...args)
+        } catch (fallbackErr) {
+          throw formatDbError(fallbackErr)
+        }
+      }
+
       throw formatDbError(err)
     }
   }
