@@ -81,8 +81,10 @@ function parseBooleanish(value, defaultValue = false) {
 }
 
 function mapOffer(row) {
+  const offerId = Number(row.id ?? row.campaign_id ?? 0)
+
   return {
-    offer_id: row.id,
+    offer_id: offerId,
     title: row.title,
     short_description: row.short_description || row.description || "",
     long_description: row.long_description || row.description || "",
@@ -627,6 +629,34 @@ async function initDB() {
       trackier_url text,
       status text default 'active'
     );
+
+    alter table campaigns add column if not exists id integer;
+
+    do $campaigns_legacy$
+    begin
+      if exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'campaigns'
+          and column_name = 'campaign_id'
+      ) then
+        execute 'update campaigns set id = campaign_id where id is null';
+      end if;
+    end
+    $campaigns_legacy$;
+
+    create sequence if not exists campaigns_id_seq;
+    alter table campaigns alter column id set default nextval('campaigns_id_seq');
+    update campaigns
+    set id = nextval('campaigns_id_seq')
+    where id is null;
+    select setval(
+      'campaigns_id_seq',
+      coalesce((select max(id) from campaigns), 0) + 1,
+      false
+    );
+    create unique index if not exists idx_campaigns_id_unique on campaigns(id);
 
     alter table campaigns add column if not exists short_description text;
     alter table campaigns add column if not exists long_description text;
