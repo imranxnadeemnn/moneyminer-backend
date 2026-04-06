@@ -949,7 +949,9 @@ async function processOtpVerification(identity, otp) {
   const challengeResult = await db.query(
     `select *
      from otp_requests
-     where channel=$1 and target=$2 and consumed_at is null
+     where channel=$1
+       and target=$2
+       and nullif(trim(coalesce(consumed_at::text, '')), '') is null
      order by created_at desc
      limit 1`,
     [identity.channel, identity.target]
