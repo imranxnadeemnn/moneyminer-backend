@@ -797,6 +797,13 @@ async function initDB() {
       created_at timestamp default current_timestamp
     );
 
+    alter table kyc add column if not exists status text default 'submitted';
+    alter table kyc add column if not exists created_at timestamp default current_timestamp;
+
+    update kyc
+    set status = 'submitted'
+    where status is null or trim(coalesce(status::text, '')) = '';
+
     create table if not exists admins (
       id serial primary key,
       username text unique,
