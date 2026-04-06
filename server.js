@@ -877,6 +877,8 @@ async function initDB() {
 }
 
 async function ensureUserForIdentity(identity) {
+  let userId = null
+
   const existingIdentity = await db.query(
     `select user_id
      from user_identities
@@ -885,43 +887,45 @@ async function ensureUserForIdentity(identity) {
   )
 
   if (existingIdentity.rows[0]) {
-    const userId = existingIdentity.rows[0].user_id
-    const existingProfile = await db.query(
-      "select referral_code from profiles where user_id=$1",
-      [userId]
-    )
-
-    if (!hasValue(existingProfile.rows[0]?.referral_code)) {
-      await db.query(
-        `update profiles
-         set referral_code=$1,
-             updated_at=current_timestamp
-         where user_id=$2`,
-        [generateReferralCode(userId), userId]
-      )
-    }
-
-    await db.query(
-      `update profiles
-       set email = case when $2='email' then $1 else email end,
-           phone = case when $2='phone' then $1 else phone end,
-           updated_at = current_timestamp
-       where user_id=$3`,
-      [identity.target, identity.channel, userId]
-    )
-    return userId
+    userId = Number(existingIdentity.rows[0].user_id)
   }
 
-  const insertedUser = await db.query(
-    "insert into users(phone) values($1) returning user_id",
-    [identity.channel === "phone" ? identity.target : null]
-  )
+  if (!userId && identity.channel === "phone") {
+    const existingPhoneUser = await db.query(
+      "select user_id from users where phone=$1 limit 1",
+      [identity.target]
+    )
+    userId = Number(existingPhoneUser.rows[0]?.user_id || 0)
+  }
 
-  const userId = insertedUser.rows[0].user_id
+  if (!userId && identity.channel === "email") {
+    const existingEmailUser = await db.query(
+      "select user_id from profiles where lower(email)=lower($1) limit 1",
+      [identity.target]
+    )
+    userId = Number(existingEmailUser.rows[0]?.user_id || 0)
+  }
+
+  if (!userId) {
+    const insertedUser = await db.query(
+      `insert into users(phone)
+       values($1)
+       on conflict (phone) do update set phone=excluded.phone
+       returning user_id`,
+      [identity.channel === "phone" ? identity.target : null]
+    )
+
+    userId = Number(insertedUser.rows[0]?.user_id || 0)
+  }
+
+  if (!userId) {
+    throw new Error("Unable to resolve user for identity")
+  }
 
   await db.query(
     `insert into user_identities(user_id, identity_type, identity_value, is_verified)
-     values($1, $2, $3, true)`,
+     values($1, $2, $3, true)
+     on conflict (identity_type, identity_value) do nothing`,
     [userId, identity.channel, identity.target]
   )
 
@@ -936,6 +940,7 @@ async function ensureUserForIdentity(identity) {
      on conflict (user_id) do update
      set email = coalesce(excluded.email, profiles.email),
          phone = coalesce(excluded.phone, profiles.phone),
+         referral_code = coalesce(profiles.referral_code, excluded.referral_code),
          updated_at = current_timestamp`,
     [
       userId,
