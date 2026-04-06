@@ -449,7 +449,7 @@ async function syncWithdrawalWithProvider(withdrawal) {
 async function getOnboardingState(userId) {
   const profileResult = await db.query(
     `select u.user_id, p.full_name, p.email, p.phone, p.referral_code,
-            exists(select 1 from kyc k where k.user_id=u.user_id and k.status in ('submitted', 'approved')) as kyc_completed,
+            exists(select 1 from kyc k where k.user_id=u.user_id) as kyc_completed,
             exists(
               select 1
               from payment_methods pm
@@ -503,14 +503,22 @@ async function getActivePaymentMethod(userId) {
 
 async function getKycRecord(userId) {
   const kycResult = await db.query(
-    `select id, user_id, name, pan, upi, status, created_at
+    `select *
      from kyc
      where user_id=$1
      limit 1`,
     [userId]
   )
 
-  return kycResult.rows[0] || null
+  const row = kycResult.rows[0] || null
+  if (!row) {
+    return null
+  }
+
+  return {
+    ...row,
+    status: row.status || "submitted"
+  }
 }
 
 function generateReferralCode(userId) {
