@@ -561,6 +561,45 @@ async function initDB() {
       created_at timestamp default current_timestamp
     );
 
+    alter table otp_requests add column if not exists channel text;
+    alter table otp_requests add column if not exists target text;
+    alter table otp_requests add column if not exists otp_code text;
+    alter table otp_requests add column if not exists expires_at timestamp;
+    alter table otp_requests add column if not exists consumed_at timestamp;
+    alter table otp_requests add column if not exists created_at timestamp default current_timestamp;
+
+    do $otp_legacy$
+    begin
+      if exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'otp_requests'
+          and column_name = 'phone'
+      ) then
+        execute 'update otp_requests set target = phone where target is null and phone is not null';
+      end if;
+
+      if exists (
+        select 1
+        from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'otp_requests'
+          and column_name = 'otp'
+      ) then
+        execute 'update otp_requests set otp_code = otp where otp_code is null and otp is not null';
+      end if;
+    end
+    $otp_legacy$;
+
+    update otp_requests
+    set channel = 'phone'
+    where channel is null or channel = '';
+
+    update otp_requests
+    set expires_at = current_timestamp + interval '10 minutes'
+    where expires_at is null;
+
     create table if not exists profiles (
       user_id int primary key references users(user_id) on delete cascade,
       full_name text,
