@@ -825,12 +825,14 @@ async function initDB() {
     create index if not exists idx_identities_lookup on user_identities(identity_type, identity_value);
     create index if not exists idx_clicks_user_id on clicks(user_id);
     create index if not exists idx_otp_lookup on otp_requests(channel, target, created_at desc);
-    create unique index if not exists idx_campaigns_title_unique on campaigns(title);
-    create unique index if not exists idx_admins_username_unique on admins(username);
+    create index if not exists idx_campaigns_title on campaigns(title);
+    create index if not exists idx_admins_username on admins(username);
 
     insert into admins (username, password)
-    values ('admin', 'admin123')
-    on conflict (username) do nothing;
+    select 'admin', 'admin123'
+    where not exists (
+      select 1 from admins where username='admin'
+    );
 
     insert into campaigns (
       title,
@@ -851,26 +853,49 @@ async function initDB() {
       is_featured,
       featured_rank
     )
-    values (
-      'Test Game',
-      20,
-      20,
-      '',
-      '',
-      'Install the app and complete the first app open event to unlock your reward.',
-      'Install and open the app to earn cashback.',
-      'Install through Rakivo and complete the first app open event within 24 hours.',
-      '',
-      'active',
-      'Featured',
-      'install',
-      'Install & Earn',
-      'Reward is credited after advertiser postback validation.',
-      'install',
-      true,
-      1
+    select *
+    from (
+      values (
+        'Test Game',
+        20,
+        20,
+        '',
+        '',
+        'Install the app and complete the first app open event to unlock your reward.',
+        'Install and open the app to earn cashback.',
+        'Install through Rakivo and complete the first app open event within 24 hours.',
+        '',
+        'active',
+        'Featured',
+        'install',
+        'Install & Earn',
+        'Reward is credited after advertiser postback validation.',
+        'install',
+        true,
+        1
+      )
+    ) as seed(
+      title,
+      payout,
+      reward_amount,
+      icon_url,
+      banner_url,
+      description,
+      short_description,
+      long_description,
+      trackier_url,
+      status,
+      category,
+      reward_type,
+      cta_text,
+      terms,
+      event_name,
+      is_featured,
+      featured_rank
     )
-    on conflict (title) do nothing;
+    where not exists (
+      select 1 from campaigns where lower(title)=lower('Test Game')
+    );
   `)
 
   console.log("DB initialized")
@@ -924,8 +949,12 @@ async function ensureUserForIdentity(identity) {
 
   await db.query(
     `insert into user_identities(user_id, identity_type, identity_value, is_verified)
-     values($1, $2, $3, true)
-     on conflict (identity_type, identity_value) do nothing`,
+     select $1, $2, $3, true
+     where not exists (
+       select 1
+       from user_identities
+       where identity_type=$2 and identity_value=$3
+     )`,
     [userId, identity.channel, identity.target]
   )
 
@@ -1308,8 +1337,12 @@ app.put("/me/profile", async (req, res) => {
     if (hasValue(email)) {
       await db.query(
         `insert into user_identities(user_id, identity_type, identity_value, is_verified)
-         values($1, 'email', $2, true)
-         on conflict (identity_type, identity_value) do nothing`,
+         select $1, 'email', $2, true
+         where not exists (
+           select 1
+           from user_identities
+           where identity_type='email' and identity_value=$2
+         )`,
         [userId, email]
       )
     }
@@ -1317,8 +1350,12 @@ app.put("/me/profile", async (req, res) => {
     if (hasValue(phone)) {
       await db.query(
         `insert into user_identities(user_id, identity_type, identity_value, is_verified)
-         values($1, 'phone', $2, true)
-         on conflict (identity_type, identity_value) do nothing`,
+         select $1, 'phone', $2, true
+         where not exists (
+           select 1
+           from user_identities
+           where identity_type='phone' and identity_value=$2
+         )`,
         [userId, phone]
       )
       await db.query("update users set phone=$1 where user_id=$2", [phone, userId])
