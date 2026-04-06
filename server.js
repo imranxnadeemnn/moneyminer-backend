@@ -971,7 +971,6 @@ async function processOtpVerification(identity, otp) {
      from otp_requests
      where channel=$1
        and target=$2
-       and nullif(trim(coalesce(consumed_at::text, '')), '') is null
      order by created_at desc
      limit 1`,
     [identity.channel, identity.target]
@@ -985,6 +984,10 @@ async function processOtpVerification(identity, otp) {
 
   if (otp !== challenge.otp_code) {
     return { error: { status: 401, message: "Invalid OTP" } }
+  }
+
+  if (challenge.consumed_at) {
+    return { error: { status: 409, message: "OTP already used. Request a new OTP." } }
   }
 
   if (new Date(challenge.expires_at) < new Date()) {
